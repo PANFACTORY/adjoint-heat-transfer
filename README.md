@@ -1,1 +1,1 @@
-# adjoint-fdm-heat-transfer
+# adjoint-heat-transfer

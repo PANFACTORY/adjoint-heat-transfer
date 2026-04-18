@@ -12,6 +12,10 @@ def forward(
     dx: float,
     dy: float,
     dt: float,
+    db_xmin: np.ndarray,
+    db_xmax: np.ndarray,
+    db_ymin: np.ndarray,
+    db_ymax: np.ndarray,
     u0: float,
     q0: float,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -23,8 +27,15 @@ def forward(
             qx[i, j] = -k_face * (u_tm1[i, j] - u_tm1[i - 1, j]) / dx
 
         # boundaries
-        qx[0, j] = -k[0, j] * (u_tm1[0, j] - u0) / (0.5 * dx)
-        qx[nx, j] = -k[nx - 1, j] * (u0 - u_tm1[nx - 1, j]) / (0.5 * dx)
+        if db_xmin[j]:
+            qx[0, j] = -k[0, j] * (u_tm1[0, j] - u0) / (0.5 * dx)
+        else:
+            qx[0, j] = q0
+
+        if db_xmax[j]:
+            qx[nx, j] = -k[nx - 1, j] * (u0 - u_tm1[nx - 1, j]) / (0.5 * dx)
+        else:
+            qx[nx, j] = q0
 
     # Compute y flux
     for i in range(nx):
@@ -34,8 +45,15 @@ def forward(
             qy[i, j] = -k_face * (u_tm1[i, j] - u_tm1[i, j - 1]) / dy
 
         # boundaries
-        qy[i, 0] = q0
-        qy[i, ny] = -k[i, ny - 1] * (u0 - u_tm1[i, ny - 1]) / (0.5 * dy)
+        if db_ymin[i]:
+            qy[i, 0] = -k[i, 0] * (u_tm1[i, 0] - u0) / (0.5 * dy)
+        else:
+            qy[i, 0] = q0
+
+        if db_ymax[i]:
+            qy[i, ny] = -k[i, ny - 1] * (u0 - u_tm1[i, ny - 1]) / (0.5 * dy)
+        else:
+            qy[i, ny] = q0
 
     # Update cell-centered value
     for i in range(nx):
@@ -60,6 +78,10 @@ def reverse_scatter(
     dx: float,
     dy: float,
     dt: float,
+    db_xmin: np.ndarray,
+    db_xmax: np.ndarray,
+    db_ymin: np.ndarray,
+    db_ymax: np.ndarray,
     u0: float,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     # Update cell-centered value
@@ -79,9 +101,13 @@ def reverse_scatter(
         # boundaries
         # qy[i, 0] = q0
         # qy[i, ny] = -k[i, ny - 1] * (u0 - u_t[i, ny - 1]) / (0.5 * dy)
-        au_tm1[i, ny - 1] += k[i, ny - 1] / (0.5 * dy) * aqy[i, ny]
+        if db_ymin[i]:
+            au_tm1[i, 0] += -k[i, 0] / (0.5 * dy) * aqy[i, 0]
+            ak[i, 0] += -(u_tm1[i, 0] - u0) / (0.5 * dy) * aqy[i, 0]
 
-        ak[i, ny - 1] += -(u0 - u_tm1[i, ny - 1]) / (0.5 * dy) * aqy[i, ny]
+        if db_ymax[i]:
+            au_tm1[i, ny - 1] += k[i, ny - 1] / (0.5 * dy) * aqy[i, ny]
+            ak[i, ny - 1] += -(u0 - u_tm1[i, ny - 1]) / (0.5 * dy) * aqy[i, ny]
 
         # inner faces
         for j in range(1, ny):
@@ -99,11 +125,13 @@ def reverse_scatter(
         # boundaries
         # qx[0, j] = -k[0, j] * (u_t[0, j] - u0) / (0.5 * dx)
         # qx[nx, j] = -k[nx - 1, j] * (u0 - u_t[nx - 1, j]) / (0.5 * dx)
-        au_tm1[0, j] += -k[0, j] / (0.5 * dx) * aqx[0, j]
-        au_tm1[nx - 1, j] += k[nx - 1, j] / (0.5 * dx) * aqx[nx, j]
+        if db_xmin[j]:
+            au_tm1[0, j] += -k[0, j] / (0.5 * dx) * aqx[0, j]
+            ak[0, j] += -(u_tm1[0, j] - u0) / (0.5 * dx) * aqx[0, j]
 
-        ak[0, j] += -(u_tm1[0, j] - u0) / (0.5 * dx) * aqx[0, j]
-        ak[nx - 1, j] += -(u0 - u_tm1[nx - 1, j]) / (0.5 * dx) * aqx[nx, j]
+        if db_xmax[j]:
+            au_tm1[nx - 1, j] += k[nx - 1, j] / (0.5 * dx) * aqx[nx, j]
+            ak[nx - 1, j] += -(u0 - u_tm1[nx - 1, j]) / (0.5 * dx) * aqx[nx, j]
 
         # inner faces
         for i in range(1, nx):
@@ -132,6 +160,10 @@ def reverse_gather(
     dx: float,
     dy: float,
     dt: float,
+    db_xmin: np.ndarray,
+    db_xmax: np.ndarray,
+    db_ymin: np.ndarray,
+    db_ymax: np.ndarray,
     u0: float,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     # Update cell-centered value
@@ -156,9 +188,13 @@ def reverse_gather(
     # Compute y flux on
     for i in range(nx):
         # boundaries
-        au_tm1[i, ny - 1] += k[i, ny - 1] / (0.5 * dy) * aqy[i, ny]
+        if db_ymin[i]:
+            au_tm1[i, 0] += -k[i, 0] / (0.5 * dy) * aqy[i, 0]
+            ak[i, 0] += -(u_tm1[i, 0] - u0) / (0.5 * dy) * aqy[i, 0]
 
-        ak[i, ny - 1] += -(u0 - u_tm1[i, ny - 1]) / (0.5 * dy) * aqy[i, ny]
+        if db_ymax[i]:
+            au_tm1[i, ny - 1] += k[i, ny - 1] / (0.5 * dy) * aqy[i, ny]
+            ak[i, ny - 1] += -(u0 - u_tm1[i, ny - 1]) / (0.5 * dy) * aqy[i, ny]
 
         # inner faces
         for j in range(ny):
@@ -179,11 +215,13 @@ def reverse_gather(
     # Compute x flux
     for j in range(ny):
         # boundaries
-        au_tm1[0, j] += -k[0, j] / (0.5 * dx) * aqx[0, j]
-        au_tm1[nx - 1, j] += k[nx - 1, j] / (0.5 * dx) * aqx[nx, j]
+        if db_xmin[j]:
+            au_tm1[0, j] += -k[0, j] / (0.5 * dx) * aqx[0, j]
+            ak[0, j] += -(u_tm1[0, j] - u0) / (0.5 * dx) * aqx[0, j]
 
-        ak[0, j] += -(u_tm1[0, j] - u0) / (0.5 * dx) * aqx[0, j]
-        ak[nx - 1, j] += -(u0 - u_tm1[nx - 1, j]) / (0.5 * dx) * aqx[nx, j]
+        if db_xmax[j]:
+            au_tm1[nx - 1, j] += k[nx - 1, j] / (0.5 * dx) * aqx[nx, j]
+            ak[nx - 1, j] += -(u0 - u_tm1[nx - 1, j]) / (0.5 * dx) * aqx[nx, j]
 
         # inner faces
         for i in range(nx):

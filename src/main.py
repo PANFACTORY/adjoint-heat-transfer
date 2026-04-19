@@ -1,15 +1,16 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-# from fast_solver import forward, reverse
-from reference_solver import forward
-from reference_solver import reverse_gather as reverse
+from fast_solver import forward, reverse
+
+# from reference_solver import forward
+# from reference_solver import reverse_gather as reverse
 
 lx, ly = 100.0, 100.0
 nx, ny = 100, 100
 dx, dy = lx / nx, ly / ny
 
-u0, q0 = 0.0, 1e-4
+u0, q0, qv = 0.0, 1e-1, 0.0
 nt = 10000
 dt = 0.1
 
@@ -28,35 +29,27 @@ aqx, aqy = np.zeros((nx + 1, ny)), np.zeros((nx, ny + 1))
 ak = np.zeros((nx, ny))
 
 i, j = np.arange(nx), np.arange(ny)
-db_xmin = np.full(nx, False)
-db_xmax = np.full(nx, False)
-db_ymin = abs(i - 0.5 * nx) < 0.1 * nx
-db_ymax = np.full(ny, False)
+db = (
+    np.full(ny, True),
+    np.full(ny, True),
+    np.full(nx, False),
+    np.full(nx, True),
+)
+bu = (np.full(ny, u0), np.full(ny, u0), np.full(nx, u0), np.full(nx, u0))
+bq = (
+    np.full(ny, 0.0),
+    np.full(ny, 0.0),
+    np.where(np.abs(i - 0.5 * nx) < 0.1 * nx, q0, 0.0),
+    np.full(nx, 0.0),
+)
 
 # Forward analysis
 for t in range(1, nt):
     if t % 100 == 0:
         print(f"Forward analysis: t={t}", end="\r")
 
-    u[t], qx, qy = forward(
-        u[t - 1],
-        u[t],
-        qx,
-        qy,
-        k,
-        nx,
-        ny,
-        dx,
-        dy,
-        dt,
-        db_xmin,
-        db_xmax,
-        db_ymin,
-        db_ymax,
-        u0,
-        0,
-    )
-    u[t] += q0 * dx * dy
+    u[t], qx, qy = forward(u[t - 1], u[t], qx, qy, k, nx, ny, dx, dy, dt, db, bu, bq)
+    u[t] += qv * dt
 
 # Reverse analysis
 for t in range(nt - 2, 0, -1):
@@ -70,23 +63,7 @@ for t in range(nt - 2, 0, -1):
     au_t[:, 0] += 1 / lx / ly
 
     au_tm1, aqx, aqy, ak = reverse(
-        au_tm1,
-        au_t,
-        aqx,
-        aqy,
-        ak,
-        u[t - 1],
-        k,
-        nx,
-        ny,
-        dx,
-        dy,
-        dt,
-        db_xmin,
-        db_xmax,
-        db_ymin,
-        db_ymax,
-        u0,
+        au_tm1, au_t, aqx, aqy, ak, u[t - 1], k, nx, ny, dx, dy, dt, db, bu
     )
     au_tm1, au_t = au_t, au_tm1
 

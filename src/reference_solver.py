@@ -12,13 +12,14 @@ def forward(
     dx: float,
     dy: float,
     dt: float,
-    db_xmin: np.ndarray,
-    db_xmax: np.ndarray,
-    db_ymin: np.ndarray,
-    db_ymax: np.ndarray,
-    u0: float,
-    q0: float,
+    db: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    bu: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    bq: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    db_xmin, db_xmax, db_ymin, db_ymax = db
+    bu_xmin, bu_xmax, bu_ymin, bu_ymax = bu
+    bq_xmin, bq_xmax, bq_ymin, bq_ymax = bq
+
     # Compute x flux
     for j in range(ny):
         # inner faces
@@ -28,14 +29,14 @@ def forward(
 
         # boundaries
         if db_xmin[j]:
-            qx[0, j] = -k[0, j] * (u_tm1[0, j] - u0) / (0.5 * dx)
+            qx[0, j] = -k[0, j] * (u_tm1[0, j] - bu_xmin[j]) / (0.5 * dx)
         else:
-            qx[0, j] = q0
+            qx[0, j] = bq_xmin[j]
 
         if db_xmax[j]:
-            qx[nx, j] = -k[nx - 1, j] * (u0 - u_tm1[nx - 1, j]) / (0.5 * dx)
+            qx[nx, j] = -k[nx - 1, j] * (bu_xmax[j] - u_tm1[nx - 1, j]) / (0.5 * dx)
         else:
-            qx[nx, j] = q0
+            qx[nx, j] = -bq_xmax[j]
 
     # Compute y flux
     for i in range(nx):
@@ -46,14 +47,14 @@ def forward(
 
         # boundaries
         if db_ymin[i]:
-            qy[i, 0] = -k[i, 0] * (u_tm1[i, 0] - u0) / (0.5 * dy)
+            qy[i, 0] = -k[i, 0] * (u_tm1[i, 0] - bu_ymin[i]) / (0.5 * dy)
         else:
-            qy[i, 0] = q0
+            qy[i, 0] = bq_ymin[i]
 
         if db_ymax[i]:
-            qy[i, ny] = -k[i, ny - 1] * (u0 - u_tm1[i, ny - 1]) / (0.5 * dy)
+            qy[i, ny] = -k[i, ny - 1] * (bu_ymax[i] - u_tm1[i, ny - 1]) / (0.5 * dy)
         else:
-            qy[i, ny] = q0
+            qy[i, ny] = -bq_ymax[i]
 
     # Update cell-centered value
     for i in range(nx):
@@ -78,12 +79,12 @@ def reverse_scatter(
     dx: float,
     dy: float,
     dt: float,
-    db_xmin: np.ndarray,
-    db_xmax: np.ndarray,
-    db_ymin: np.ndarray,
-    db_ymax: np.ndarray,
-    u0: float,
+    db: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    bu: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    db_xmin, db_xmax, db_ymin, db_ymax = db
+    bu_xmin, bu_xmax, bu_ymin, bu_ymax = bu
+
     # Update cell-centered value
     for i in range(nx):
         for j in range(ny):
@@ -103,11 +104,11 @@ def reverse_scatter(
         # qy[i, ny] = -k[i, ny - 1] * (u0 - u_t[i, ny - 1]) / (0.5 * dy)
         if db_ymin[i]:
             au_tm1[i, 0] += -k[i, 0] / (0.5 * dy) * aqy[i, 0]
-            ak[i, 0] += -(u_tm1[i, 0] - u0) / (0.5 * dy) * aqy[i, 0]
+            ak[i, 0] += -(u_tm1[i, 0] - bu_ymin[i]) / (0.5 * dy) * aqy[i, 0]
 
         if db_ymax[i]:
             au_tm1[i, ny - 1] += k[i, ny - 1] / (0.5 * dy) * aqy[i, ny]
-            ak[i, ny - 1] += -(u0 - u_tm1[i, ny - 1]) / (0.5 * dy) * aqy[i, ny]
+            ak[i, ny - 1] += -(bu_ymax[i] - u_tm1[i, ny - 1]) / (0.5 * dy) * aqy[i, ny]
 
         # inner faces
         for j in range(1, ny):
@@ -127,11 +128,11 @@ def reverse_scatter(
         # qx[nx, j] = -k[nx - 1, j] * (u0 - u_t[nx - 1, j]) / (0.5 * dx)
         if db_xmin[j]:
             au_tm1[0, j] += -k[0, j] / (0.5 * dx) * aqx[0, j]
-            ak[0, j] += -(u_tm1[0, j] - u0) / (0.5 * dx) * aqx[0, j]
+            ak[0, j] += -(u_tm1[0, j] - bu_xmin[j]) / (0.5 * dx) * aqx[0, j]
 
         if db_xmax[j]:
             au_tm1[nx - 1, j] += k[nx - 1, j] / (0.5 * dx) * aqx[nx, j]
-            ak[nx - 1, j] += -(u0 - u_tm1[nx - 1, j]) / (0.5 * dx) * aqx[nx, j]
+            ak[nx - 1, j] += -(bu_xmax[j] - u_tm1[nx - 1, j]) / (0.5 * dx) * aqx[nx, j]
 
         # inner faces
         for i in range(1, nx):
@@ -160,12 +161,12 @@ def reverse_gather(
     dx: float,
     dy: float,
     dt: float,
-    db_xmin: np.ndarray,
-    db_xmax: np.ndarray,
-    db_ymin: np.ndarray,
-    db_ymax: np.ndarray,
-    u0: float,
+    db: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    bu: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    db_xmin, db_xmax, db_ymin, db_ymax = db
+    bu_xmin, bu_xmax, bu_ymin, bu_ymax = bu
+
     # Update cell-centered value
     for i in range(nx):
         for j in range(ny):
@@ -190,11 +191,11 @@ def reverse_gather(
         # boundaries
         if db_ymin[i]:
             au_tm1[i, 0] += -k[i, 0] / (0.5 * dy) * aqy[i, 0]
-            ak[i, 0] += -(u_tm1[i, 0] - u0) / (0.5 * dy) * aqy[i, 0]
+            ak[i, 0] += -(u_tm1[i, 0] - bu_ymin[i]) / (0.5 * dy) * aqy[i, 0]
 
         if db_ymax[i]:
             au_tm1[i, ny - 1] += k[i, ny - 1] / (0.5 * dy) * aqy[i, ny]
-            ak[i, ny - 1] += -(u0 - u_tm1[i, ny - 1]) / (0.5 * dy) * aqy[i, ny]
+            ak[i, ny - 1] += -(bu_ymax[i] - u_tm1[i, ny - 1]) / (0.5 * dy) * aqy[i, ny]
 
         # inner faces
         for j in range(ny):
@@ -217,11 +218,11 @@ def reverse_gather(
         # boundaries
         if db_xmin[j]:
             au_tm1[0, j] += -k[0, j] / (0.5 * dx) * aqx[0, j]
-            ak[0, j] += -(u_tm1[0, j] - u0) / (0.5 * dx) * aqx[0, j]
+            ak[0, j] += -(u_tm1[0, j] - bu_xmin[j]) / (0.5 * dx) * aqx[0, j]
 
         if db_xmax[j]:
             au_tm1[nx - 1, j] += k[nx - 1, j] / (0.5 * dx) * aqx[nx, j]
-            ak[nx - 1, j] += -(u0 - u_tm1[nx - 1, j]) / (0.5 * dx) * aqx[nx, j]
+            ak[nx - 1, j] += -(bu_xmax[j] - u_tm1[nx - 1, j]) / (0.5 * dx) * aqx[nx, j]
 
         # inner faces
         for i in range(nx):

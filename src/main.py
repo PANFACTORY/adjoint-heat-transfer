@@ -7,26 +7,20 @@ from fast_solver import forward, reverse
 # from reference_solver import reverse_gather as reverse
 
 lx, ly = 100.0, 100.0
-nx, ny = 100, 100
-dx, dy = lx / nx, ly / ny
+nx, ny, nt = 100, 100, 10000
+dx, dy, dt = lx / nx, ly / ny, 0.1
 
 u0, q0, qv = 0.0, 1e-1, 0.0
-nt = 10000
-dt = 0.1
-
-gamma = np.full((nx, ny), 0.1)
-i, j = np.arange(nx)[:, None], np.arange(ny)[None, :]
-mask = (np.abs(i - 0.5 * nx) < 0.25 * nx) & (j < 0.5 * ny)
-gamma[mask] = 0.9
-
 k_min, k_max = 0.01, 1
+
+i, j = np.arange(nx)[:, None], np.arange(ny)[None, :]
+gamma = np.where((np.abs(i - nx / 2) < nx / 4) & (j < ny / 2), 0.9, 0.1)
 k = (k_max - k_min) * gamma + k_min
 
 u = np.zeros((nt, nx, ny))
 qx, qy = np.zeros((nx + 1, ny)), np.zeros((nx, ny + 1))
-au_tm1, au_t = np.zeros((nx, ny)), np.zeros((nx, ny))
+au_tm1, au_t, ak = np.zeros((nx, ny)), np.zeros((nx, ny)), np.zeros((nx, ny))
 aqx, aqy = np.zeros((nx + 1, ny)), np.zeros((nx, ny + 1))
-ak = np.zeros((nx, ny))
 
 i, j = np.arange(nx), np.arange(ny)
 db = (
@@ -52,7 +46,7 @@ for t in range(1, nt):
     u[t] += qv * dt
 
 # Reverse analysis
-for t in range(nt - 2, 0, -1):
+for t in range(nt - 1, 0, -1):
     if t % 100 == 0:
         print(f"Reverse analysis: t={t}", end="\r")
 

@@ -1,0 +1,243 @@
+import numpy as np
+
+
+def forward(
+    u_tm1: np.ndarray,
+    u_t: np.ndarray,
+    qx: np.ndarray,
+    qy: np.ndarray,
+    k: np.ndarray,
+    nx: int,
+    ny: int,
+    dx: float,
+    dy: float,
+    dt: float,
+    db: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    bu: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    bq: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    db_xmin, db_xmax, db_ymin, db_ymax = db
+    bu_xmin, bu_xmax, bu_ymin, bu_ymax = bu
+    bq_xmin, bq_xmax, bq_ymin, bq_ymax = bq
+
+    # Compute x flux
+    for j in range(ny):
+        # inner faces
+        for i in range(1, nx):
+            k_face = 2 * k[i - 1, j] * k[i, j] / (k[i - 1, j] + k[i, j])
+            qx[i, j] = -k_face * (u_tm1[i, j] - u_tm1[i - 1, j]) / dx
+
+        # boundaries
+        if db_xmin[j]:
+            qx[0, j] = -k[0, j] * (u_tm1[0, j] - bu_xmin[j]) / (0.5 * dx)
+        else:
+            qx[0, j] = bq_xmin[j]
+
+        if db_xmax[j]:
+            qx[nx, j] = -k[nx - 1, j] * (bu_xmax[j] - u_tm1[nx - 1, j]) / (0.5 * dx)
+        else:
+            qx[nx, j] = -bq_xmax[j]
+
+    # Compute y flux
+    for i in range(nx):
+        # inner faces
+        for j in range(1, ny):
+            k_face = 2 * k[i, j - 1] * k[i, j] / (k[i, j - 1] + k[i, j])
+            qy[i, j] = -k_face * (u_tm1[i, j] - u_tm1[i, j - 1]) / dy
+
+        # boundaries
+        if db_ymin[i]:
+            qy[i, 0] = -k[i, 0] * (u_tm1[i, 0] - bu_ymin[i]) / (0.5 * dy)
+        else:
+            qy[i, 0] = bq_ymin[i]
+
+        if db_ymax[i]:
+            qy[i, ny] = -k[i, ny - 1] * (bu_ymax[i] - u_tm1[i, ny - 1]) / (0.5 * dy)
+        else:
+            qy[i, ny] = -bq_ymax[i]
+
+    # Update cell-centered value
+    for i in range(nx):
+        for j in range(ny):
+            u_t[i, j] = u_tm1[i, j] - dt * (
+                (qx[i + 1, j] - qx[i, j]) / dx + (qy[i, j + 1] - qy[i, j]) / dy
+            )
+
+    return u_t, qx, qy
+
+
+def reverse_scatter(
+    au_tm1: np.ndarray,
+    au_t: np.ndarray,
+    aqx: np.ndarray,
+    aqy: np.ndarray,
+    ak: np.ndarray,
+    u_tm1: np.ndarray,
+    k: np.ndarray,
+    nx: int,
+    ny: int,
+    dx: float,
+    dy: float,
+    dt: float,
+    db: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    bu: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    db_xmin, db_xmax, db_ymin, db_ymax = db
+    bu_xmin, bu_xmax, bu_ymin, bu_ymax = bu
+
+    # Update cell-centered value
+    for i in range(nx):
+        for j in range(ny):
+            # u_tp1[i, j] = u_t[i, j] - dt * (
+            #     (qx[i + 1, j] - qx[i, j]) / dx + (qy[i, j + 1] - qy[i, j]) / dy
+            # )
+            au_tm1[i, j] += au_t[i, j]
+            aqx[i + 1, j] += -dt / dx * au_t[i, j]
+            aqx[i, j] += dt / dx * au_t[i, j]
+            aqy[i, j + 1] += -dt / dy * au_t[i, j]
+            aqy[i, j] += dt / dy * au_t[i, j]
+
+    # Compute y flux
+    for i in range(nx):
+        # boundaries
+        # qy[i, 0] = q0
+        # qy[i, ny] = -k[i, ny - 1] * (u0 - u_t[i, ny - 1]) / (0.5 * dy)
+        if db_ymin[i]:
+            au_tm1[i, 0] += -k[i, 0] / (0.5 * dy) * aqy[i, 0]
+            ak[i, 0] += -(u_tm1[i, 0] - bu_ymin[i]) / (0.5 * dy) * aqy[i, 0]
+
+        if db_ymax[i]:
+            au_tm1[i, ny - 1] += k[i, ny - 1] / (0.5 * dy) * aqy[i, ny]
+            ak[i, ny - 1] += -(bu_ymax[i] - u_tm1[i, ny - 1]) / (0.5 * dy) * aqy[i, ny]
+
+        # inner faces
+        for j in range(1, ny):
+            k_face = 2 * k[i, j - 1] * k[i, j] / (k[i, j - 1] + k[i, j])
+            # qy[i, j] = -k_face * (u_t[i, j] - u_t[i, j - 1]) / dy
+            au_tm1[i, j] += -k_face / dy * aqy[i, j]
+            au_tm1[i, j - 1] += k_face / dy * aqy[i, j]
+
+            ak_face = -(u_tm1[i, j] - u_tm1[i, j - 1]) / dy * aqy[i, j]
+            ak[i, j - 1] += 2 * (k[i, j] / (k[i, j - 1] + k[i, j])) ** 2 * ak_face
+            ak[i, j] += 2 * (k[i, j - 1] / (k[i, j - 1] + k[i, j])) ** 2 * ak_face
+
+    # Compute x flux
+    for j in range(ny):
+        # boundaries
+        # qx[0, j] = -k[0, j] * (u_t[0, j] - u0) / (0.5 * dx)
+        # qx[nx, j] = -k[nx - 1, j] * (u0 - u_t[nx - 1, j]) / (0.5 * dx)
+        if db_xmin[j]:
+            au_tm1[0, j] += -k[0, j] / (0.5 * dx) * aqx[0, j]
+            ak[0, j] += -(u_tm1[0, j] - bu_xmin[j]) / (0.5 * dx) * aqx[0, j]
+
+        if db_xmax[j]:
+            au_tm1[nx - 1, j] += k[nx - 1, j] / (0.5 * dx) * aqx[nx, j]
+            ak[nx - 1, j] += -(bu_xmax[j] - u_tm1[nx - 1, j]) / (0.5 * dx) * aqx[nx, j]
+
+        # inner faces
+        for i in range(1, nx):
+            k_face = 2 * k[i - 1, j] * k[i, j] / (k[i - 1, j] + k[i, j])
+            # qx[i, j] = -k_face * (u_t[i, j] - u_t[i - 1, j]) / dx
+            au_tm1[i, j] += -k_face / dx * aqx[i, j]
+            au_tm1[i - 1, j] += k_face / dx * aqx[i, j]
+
+            ak_face = -(u_tm1[i, j] - u_tm1[i - 1, j]) / dx * aqx[i, j]
+            ak[i - 1, j] += 2 * (k[i, j] / (k[i - 1, j] + k[i, j])) ** 2 * ak_face
+            ak[i, j] += 2 * (k[i - 1, j] / (k[i - 1, j] + k[i, j])) ** 2 * ak_face
+
+    return au_tm1, aqx, aqy, ak
+
+
+def reverse_gather(
+    au_tm1: np.ndarray,
+    au_t: np.ndarray,
+    aqx: np.ndarray,
+    aqy: np.ndarray,
+    ak: np.ndarray,
+    u_tm1: np.ndarray,
+    k: np.ndarray,
+    nx: int,
+    ny: int,
+    dx: float,
+    dy: float,
+    dt: float,
+    db: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+    bu: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    db_xmin, db_xmax, db_ymin, db_ymax = db
+    bu_xmin, bu_xmax, bu_ymin, bu_ymax = bu
+
+    # Update cell-centered value
+    for i in range(nx):
+        for j in range(ny):
+            au_tm1[i, j] += au_t[i, j]
+
+    for i in range(nx + 1):
+        for j in range(ny):
+            if i > 0:
+                aqx[i, j] += -dt / dx * au_t[i - 1, j]
+            if i < nx:
+                aqx[i, j] += dt / dx * au_t[i, j]
+
+    for i in range(nx):
+        for j in range(ny + 1):
+            if j > 0:
+                aqy[i, j] += -dt / dy * au_t[i, j - 1]
+            if j < ny:
+                aqy[i, j] += dt / dy * au_t[i, j]
+
+    # Compute y flux on
+    for i in range(nx):
+        # boundaries
+        if db_ymin[i]:
+            au_tm1[i, 0] += -k[i, 0] / (0.5 * dy) * aqy[i, 0]
+            ak[i, 0] += -(u_tm1[i, 0] - bu_ymin[i]) / (0.5 * dy) * aqy[i, 0]
+
+        if db_ymax[i]:
+            au_tm1[i, ny - 1] += k[i, ny - 1] / (0.5 * dy) * aqy[i, ny]
+            ak[i, ny - 1] += -(bu_ymax[i] - u_tm1[i, ny - 1]) / (0.5 * dy) * aqy[i, ny]
+
+        # inner faces
+        for j in range(ny):
+            if j > 0:
+                k_face = 2 * k[i, j - 1] * k[i, j] / (k[i, j - 1] + k[i, j])
+                au_tm1[i, j] += -k_face / dy * aqy[i, j]
+            if j < ny - 1:
+                k_face = 2 * k[i, j] * k[i, j + 1] / (k[i, j] + k[i, j + 1])
+                au_tm1[i, j] += k_face / dy * aqy[i, j + 1]
+
+            if j > 0:
+                ak_face = -(u_tm1[i, j] - u_tm1[i, j - 1]) / dy * aqy[i, j]
+                ak[i, j] += 2 * (k[i, j - 1] / (k[i, j - 1] + k[i, j])) ** 2 * ak_face
+            if j < ny - 1:
+                ak_face = -(u_tm1[i, j + 1] - u_tm1[i, j]) / dy * aqy[i, j + 1]
+                ak[i, j] += 2 * (k[i, j + 1] / (k[i, j] + k[i, j + 1])) ** 2 * ak_face
+
+    # Compute x flux
+    for j in range(ny):
+        # boundaries
+        if db_xmin[j]:
+            au_tm1[0, j] += -k[0, j] / (0.5 * dx) * aqx[0, j]
+            ak[0, j] += -(u_tm1[0, j] - bu_xmin[j]) / (0.5 * dx) * aqx[0, j]
+
+        if db_xmax[j]:
+            au_tm1[nx - 1, j] += k[nx - 1, j] / (0.5 * dx) * aqx[nx, j]
+            ak[nx - 1, j] += -(bu_xmax[j] - u_tm1[nx - 1, j]) / (0.5 * dx) * aqx[nx, j]
+
+        # inner faces
+        for i in range(nx):
+            if i > 0:
+                k_face = 2 * k[i - 1, j] * k[i, j] / (k[i - 1, j] + k[i, j])
+                au_tm1[i, j] += -k_face / dx * aqx[i, j]
+            if i < nx - 1:
+                k_face = 2 * k[i, j] * k[i + 1, j] / (k[i, j] + k[i + 1, j])
+                au_tm1[i, j] += k_face / dx * aqx[i + 1, j]
+
+            if i > 0:
+                ak_face = -(u_tm1[i, j] - u_tm1[i - 1, j]) / dx * aqx[i, j]
+                ak[i, j] += 2 * (k[i - 1, j] / (k[i - 1, j] + k[i, j])) ** 2 * ak_face
+            if i < nx - 1:
+                ak_face = -(u_tm1[i + 1, j] - u_tm1[i, j]) / dx * aqx[i + 1, j]
+                ak[i, j] += 2 * (k[i + 1, j] / (k[i, j] + k[i + 1, j])) ** 2 * ak_face
+
+    return au_tm1, aqx, aqy, ak

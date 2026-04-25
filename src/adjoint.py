@@ -23,6 +23,7 @@ au_tm1, au_t, ak = np.zeros((nx, ny)), np.zeros((nx, ny)), np.zeros((nx, ny))
 aqx, aqy = np.zeros((nx + 1, ny)), np.zeros((nx, ny + 1))
 
 i, j = np.arange(nx), np.arange(ny)
+is_heat_source = np.abs(i - 0.5 * nx) < 0.1 * nx
 db = (
     np.full(ny, True),
     np.full(ny, True),
@@ -33,7 +34,7 @@ bu = (np.full(ny, u0), np.full(ny, u0), np.full(nx, u0), np.full(nx, u0))
 bq = (
     np.full(ny, 0.0),
     np.full(ny, 0.0),
-    np.where(np.abs(i - 0.5 * nx) < 0.1 * nx, q0, 0.0),
+    np.where(is_heat_source, q0, 0.0),
     np.full(nx, 0.0),
 )
 
@@ -54,7 +55,7 @@ for t in range(nt - 1, 0, -1):
     aqx.fill(0)
     aqy.fill(0)
 
-    au_t[:, 0] += 1 / lx / ly
+    au_t[is_heat_source, 0] += 1 / lx / ly / nt
 
     au_tm1, aqx, aqy, ak = reverse(
         au_tm1, au_t, aqx, aqy, ak, u[t - 1], k, nx, ny, dx, dy, dt, db, bu
